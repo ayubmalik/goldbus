@@ -2,84 +2,120 @@ package main
 
 import (
 	"fmt"
-	"log"
-	"os"
+	"strconv"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/binding"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
-	"github.com/goburrow/modbus"
-)
-
-const (
-	title = "Goldbus client v0.1"
+	"github.com/tbrandon/mbserver"
 )
 
 func main() {
-	app := app.NewWithID("com.goldbus.Client")
-	window := app.NewWindow(title)
+	app := app.New()
 
-	content := container.NewVBox(createServerUI(), createRegistersUI())
-	window.SetContent(content)
-	window.CenterOnScreen()
-
-	window.Resize(fyne.NewSize(900, 660))
-	window.Canvas().Scale()
-	window.ShowAndRun()
-}
-
-func createServerUI() *fyne.Container {
+	window := app.NewWindow("Goldbus v0.1")
 
 	host := widget.NewEntry()
 	host.SetText("localhost")
 
 	port := widget.NewEntry()
-	port.SetText("1501")
+	port.SetText("1502")
+	statusText := binding.NewString()
 
-	serverCard := widget.NewCard("Modbus Server", "",
-		widget.NewForm(
-			widget.NewFormItem("Host", host),
-			widget.NewFormItem("Port", port),
-		),
+	var (
+		start *widget.Button
+		stop  *widget.Button
+		mb    *mbserver.Server
 	)
 
-	status := widget.NewLabelWithStyle("Not connected.", fyne.TextAlignLeading, fyne.TextStyle{Bold: true, Monospace: true})
+	start = widget.NewButton("Start Server", func() {
 
-	connect := widget.NewButton("Connect", func() {
-
-		handler := modbus.NewTCPClientHandler(fmt.Sprintf("%s:%s", host.Text, port.Text))
-		handler.Timeout = 10 * time.Second
-		handler.SlaveId = 0x01
-		handler.Logger = log.New(os.Stdout, "test: ", log.LstdFlags)
-		// Connect manually so that multiple requests are handled in one connection session
-		handler.Connect()
-		defer handler.Close()
-
-		client := modbus.NewClient(handler)
-		_, err := client.ReadHoldingRegisters(14505, 1)
+		mb = mbserver.NewServer()
+		err := mb.ListenTCP("localhost:1502") // TODO
 		if err != nil {
-			status.SetText(fmt.Sprintf("Connection error: %v", err))
-		} else {
-			status.SetText("Connected.")
+			panic("could not start server!")
 		}
 
+		statusText.Set(fmt.Sprintf("Started server. Holding Register Count: %d", len(mb.HoldingRegisters)))
+		start.Disable()
+		stop.Enable()
 	})
 
-	controlCard := container.NewVBox(connect)
+	stop = widget.NewButton("Stop Server", func() {
+		mb.Close()
+		statusText.Set("Server stopped.")
+		stop.Disable()
+		start.Enable()
+	})
+	stop.Disable()
 
-	return container.NewBorder(nil, status, nil, controlCard, serverCard)
+	top := container.NewVBox(
+		widget.NewCard("Modbus Server:", "", widget.NewForm(
+			widget.NewFormItem("Host", host),
+			widget.NewFormItem("Port", port),
+			widget.NewFormItem("", start),
+			widget.NewFormItem("", stop)),
+		),
+		layout.NewSpacer(),
+		widget.NewLabelWithData(statusText),
+	)
+
+	registerUI := newRegisterUI()
+	main := container.NewVBox(top, registerUI.container)
+
+	window.SetContent(main)
+	window.CenterOnScreen()
+	window.Resize(fyne.NewSize(640, 480))
+
+	go func() {
+		time.Sleep(7 * time.Second)
+		registerUI.update(100)
+		fmt.Printf("objects: %v\n", registerUI.register)
+	}()
+	window.ShowAndRun()
 }
 
-// registers contains the UI and logic
-// for the registers in modbus
-type registers struct {
-	client *modbus.Client
+type register struct {
+	name    string
+	_type   string
+	address int
 }
 
-func createRegistersUI() *fyne.Container {
-	registers := container.NewGridWithColumns(4, widget.NewEntry(), widget.NewSelect([]string{"INPUT", "HOLDING"}, nil), widget.NewEntry())
-	card := widget.NewCard("Registers", "", registers)
-	return container.NewVBox(card)
+type registerUI struct {
+	container *fyne.Container
+	*register
+	update func(value int)
+}
+
+func newRegisterUI() *registerUI {
+
+	n := widget.NewEntry()
+	n.SetPlaceHolder("name")
+
+	t := widget.NewSelect([]string{"INPUT", "HOLDING"}, nil)
+	t.SetSelected("HOLDING")
+	a := widget.NewEntry()
+	a.SetPlaceHolder("address")
+
+	value := binding.NewInt()
+	v := widget.NewEntryWithData(binding.IntToString(value))
+	v.Disable()
+
+	r := &register{}
+	n.OnChanged = func(s string) { r.name = s }
+	t.OnChanged = func(s string) { r._type = s }
+	a.OnChanged = func(s string) { r.address, _ = strconv.Atoi(s) }
+
+	return &registerUI{
+		register:  r,
+		container: container.NewGridWithColumns(4, n, t, a, v),
+		update: func(n int) {
+			value.Set(n)
+		},
+	}
+
 }

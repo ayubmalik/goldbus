@@ -2,87 +2,70 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"strconv"
-	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"github.com/tbrandon/mbserver"
+)
+
+const (
+	version = "v0.1"
+	title   = "Goldbus Client"
 )
 
 func main() {
-	app := app.New()
 
-	window := app.NewWindow("Goldbus v0.1")
+	application := app.New()
 
-	host := widget.NewEntry()
-	host.SetText("localhost")
+	serverUI := newServerUI()
+	registersUI := newRegistersUI()
+	registersUI.addRegister()
+	controlUI := newControlUI()
+	ui := container.NewVBox(serverUI.container, registersUI.container, layout.NewSpacer(), controlUI.container)
 
-	port := widget.NewEntry()
-	port.SetText("1502")
-	statusText := binding.NewString()
-
-	var (
-		start *widget.Button
-		stop  *widget.Button
-		mb    *mbserver.Server
-	)
-
-	start = widget.NewButton("Start Server", func() {
-
-		mb = mbserver.NewServer()
-		err := mb.ListenTCP("localhost:1502") // TODO
-		if err != nil {
-			panic("could not start server!")
-		}
-
-		statusText.Set(fmt.Sprintf("Started server. Holding Register Count: %d", len(mb.HoldingRegisters)))
-		start.Disable()
-		stop.Enable()
-	})
-
-	stop = widget.NewButton("Stop Server", func() {
-		mb.Close()
-		statusText.Set("Server stopped.")
-		stop.Disable()
-		start.Enable()
-	})
-	stop.Disable()
-
-	top := container.NewVBox(
-		widget.NewCard("Modbus Server:", "", widget.NewForm(
-			widget.NewFormItem("Host", host),
-			widget.NewFormItem("Port", port),
-			widget.NewFormItem("", start),
-			widget.NewFormItem("", stop)),
-		),
-		layout.NewSpacer(),
-		widget.NewLabelWithData(statusText),
-	)
-
-	registerUI := newRegisterUI()
-	main := container.NewVBox(top, registerUI.container)
-
-	window.SetContent(main)
+	window := application.NewWindow(fmt.Sprintf("%s %s", title, version))
+	window.SetContent(ui)
 	window.CenterOnScreen()
 	window.Resize(fyne.NewSize(640, 480))
-
-	go func() {
-		time.Sleep(7 * time.Second)
-		registerUI.update(100)
-		fmt.Printf("objects: %v\n", registerUI.register)
-	}()
 	window.ShowAndRun()
 }
 
-type register struct {
-	name    string
-	_type   string
-	address int
+type serverUI struct {
+	container *fyne.Container
+}
+
+func newServerUI() *serverUI {
+	host := widget.NewEntry()
+	host.SetText("localhost")
+	port := widget.NewEntry()
+	port.SetText("1501")
+	content := container.New(layout.NewFormLayout(), widget.NewLabel("Host"), host, widget.NewLabel("Port"), port)
+	card := widget.NewCard("Modbus Details", "", content)
+	return &serverUI{container: container.NewMax(card)}
+}
+
+type registersUI struct {
+	container *fyne.Container
+}
+
+func (ui *registersUI) addRegister() {
+	reg := newRegisterUI()
+	ui.container.Objects = append(ui.container.Objects, reg.container)
+	log.Println("adding reg")
+}
+
+func newRegistersUI() *registersUI {
+	var ui *registersUI
+	add := widget.NewButtonWithIcon("Add Register", theme.ContentAddIcon(), func() { ui.addRegister() })
+	content := container.NewVBox(container.NewHBox(add), container.NewVBox())
+	ui = &registersUI{container: content}
+	return ui
 }
 
 type registerUI struct {
@@ -91,8 +74,14 @@ type registerUI struct {
 	update func(value int)
 }
 
-func newRegisterUI() *registerUI {
+// TODO: move pkg
+type register struct {
+	name    string
+	_type   string
+	address int
+}
 
+func newRegisterUI() *registerUI {
 	n := widget.NewEntry()
 	n.SetPlaceHolder("name")
 
@@ -117,5 +106,15 @@ func newRegisterUI() *registerUI {
 			value.Set(n)
 		},
 	}
+}
 
+type controlUI struct {
+	container *fyne.Container
+}
+
+func newControlUI() *controlUI {
+	read := widget.NewButtonWithIcon("Read", theme.MediaPlayIcon(), func() {})
+	stop := widget.NewButtonWithIcon("Stop", theme.MediaStopIcon(), func() {})
+	container := container.NewGridWithColumns(3, layout.NewSpacer(), stop, read)
+	return &controlUI{container}
 }

@@ -4,9 +4,9 @@ go 1.18
 
 require (
 	fyne.io/fyne/v2 v2.2.3
-	github.com/charmbracelet/bubbles v0.14.0
 	github.com/charmbracelet/bubbletea v0.22.1
 	github.com/charmbracelet/lipgloss v0.6.0
+	github.com/spf13/pflag v1.0.5
 )
 
 require (

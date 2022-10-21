@@ -10,7 +10,11 @@ import (
 )
 
 func main() {
-	p := tea.NewProgram(initialModel())
+	model := parseFlags(os.Args)
+	fmt.Println("server = ", model.server)
+	fmt.Println("regs = ", model.registers)
+
+	p := tea.NewProgram(model)
 	if err := p.Start(); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -24,21 +28,22 @@ var (
 )
 
 type register struct {
-	name    string
-	_type   string
 	address int
+	rtype   string
+	dtype   string
 	value   float32
 }
 
 type server struct {
 	host    string
 	port    uint16
-	slaveID uint8
+	slaveID uint16
 }
 
 type model struct {
-	s    server
-	regs []register
+	server    server
+	registers []register
+	interval  uint16
 }
 
 func (m *model) Init() tea.Cmd {
@@ -64,17 +69,17 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *model) View() string {
 	s := "\n"
-	for _, reg := range m.regs {
-		s += fmt.Sprintf("\n%-30s %v\n", textStyle(reg.name), valueStyle(fmt.Sprintf("%f", reg.value)))
+	for _, reg := range m.registers {
+		s += fmt.Sprintf("\n%-30s %v\n", textStyle(fmt.Sprintf("%d", reg.address)), valueStyle(fmt.Sprintf("%f", reg.value)))
 	}
 	s += helpStyle("\nq: exit\n")
 	return s
 }
 
 func (m model) setResult(result readRegResult) {
-	for i, reg := range m.regs {
+	for i, reg := range m.registers {
 		if reg.address == result.a {
-			m.regs[i].value = result.v
+			m.registers[i].value = result.v
 			break
 		}
 	}
@@ -87,19 +92,5 @@ type readRegResult struct {
 
 func readReg() tea.Msg {
 	time.Sleep(500 * time.Millisecond)
-	return readRegResult{a: 12344, v: float32(time.Now().Second())}
-}
-
-func initialModel() *model {
-	s := server{
-		host:    "localhost",
-		port:    1504,
-		slaveID: 4,
-	}
-	r := register{
-		name:    "auxiliary-active-power",
-		_type:   "holding",
-		address: 12344,
-	}
-	return &model{s: s, regs: []register{r}}
+	return readRegResult{a: 12322, v: float32(time.Now().Second())}
 }
